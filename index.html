@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CTRL — Remote Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg:       #0e0b1a;
+    --surface:  #131020;
+    --card:     #19162a;
+    --border:   #2a2245;
+    --accent:   #a855f7;
+    --accent-bright: #c084fc;
+    --accent-dim:    #7c3aed;
+    --accent2:  #f43f5e;
+    --green:    #34d399;
+    --text:     #e2dff0;
+    --muted:    #5b5580;
+    --font-mono: 'Space Mono', monospace;
+    --font-ui:  'Outfit', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Subtle grid bg ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(168,85,247,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168,85,247,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── Login Screen ── */
+  #login-screen {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 30%, #1e0a3c 0%, var(--bg) 65%);
+    position: relative; z-index: 1;
+  }
+
+  .login-box {
+    width: 380px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 44px 40px;
+    border-radius: 16px;
+    position: relative;
+    animation: fadeUp .45s cubic-bezier(.22,1,.36,1);
+    box-shadow: 0 0 60px rgba(168,85,247,0.12), 0 24px 48px rgba(0,0,0,0.4);
+  }
+
+  .login-box::before {
+    content: '';
+    position: absolute; top: 0; left: 10%; right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    border-radius: 100%;
+  }
+
+  .login-logo {
+    font-family: var(--font-ui);
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .login-logo span { color: var(--accent); }
+
+  .login-sub {
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+    font-family: var(--font-ui);
+    font-weight: 500;
+  }
+
+  .field-label {
+    font-size: 0.65rem; color: var(--muted); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 6px;
+    font-family: var(--font-ui); font-weight: 600;
+  }
+
+  input[type=password], input[type=text] {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    padding: 11px 14px;
+    outline: none;
+    border-radius: 8px;
+    transition: border .2s, box-shadow .2s;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(168,85,247,0.15); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px;
+    font-family: var(--font-ui);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background .15s, color .15s, box-shadow .15s;
+    text-transform: uppercase;
+  }
+  .btn:hover { background: var(--accent); color: #fff; box-shadow: 0 0 20px rgba(168,85,247,0.35); }
+  .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+  .btn.danger:hover { background: var(--accent2); color: #fff; box-shadow: 0 0 20px rgba(244,63,94,0.35); }
+  .btn.success { border-color: var(--green); color: var(--green); }
+  .btn.success:hover { background: var(--green); color: var(--bg); box-shadow: 0 0 20px rgba(52,211,153,0.3); }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+
+  .login-btn {
+    width: 100%; justify-content: center; margin-top: 22px;
+    padding: 13px; font-size: 0.88rem;
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+    box-shadow: 0 4px 24px rgba(168,85,247,0.4);
+  }
+  .login-btn:hover { background: var(--accent-bright); border-color: var(--accent-bright); box-shadow: 0 4px 32px rgba(168,85,247,0.6); }
+
+  .error-msg { color: var(--accent2); font-size: 0.75rem; margin-top: 12px; min-height: 18px; font-family: var(--font-ui); }
+
+  /* ── App Shell ── */
+  #app { display: none; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 24px;
+    height: 56px;
+    flex-shrink: 0;
+  }
+
+  .topbar-logo {
+    font-family: var(--font-ui);
+    font-weight: 800;
+    font-size: 1.25rem;
+    color: #fff;
+    letter-spacing: -0.5px;
+    margin-right: 28px;
+  }
+  .topbar-logo span { color: var(--accent); }
+
+  .tabs { display: flex; height: 100%; gap: 2px; align-items: center; }
+  .tab {
+    padding: 6px 16px;
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center;
+    transition: color .2s, background .2s;
+    border: none;
+    background: transparent;
+  }
+  .tab:hover { color: var(--text); background: rgba(168,85,247,0.08); }
+  .tab.active { color: var(--accent-bright); background: rgba(168,85,247,0.15); }
+
+  .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background .3s; }
+  .status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.offline { background: var(--accent2); }
+  .status-label { font-size: 0.68rem; color: var(--muted); font-family: var(--font-ui); font-weight: 500; }
+
+  /* ── Panels ── */
+  .panel { display: none; flex: 1; overflow: hidden; }
+  .panel.active { display: flex; flex-direction: column; }
+
+  /* ── Terminal ── */
+  #panel-terminal { flex-direction: column; }
+  .term-output {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px;
+    font-size: 0.78rem;
+    line-height: 1.8;
+    background: var(--bg);
+  }
+  .term-line { white-space: pre-wrap; word-break: break-all; }
+  .term-line.prompt { color: var(--accent-bright); }
+  .term-line.out { color: var(--text); }
+  .term-line.err { color: var(--accent2); }
+  .term-line.sys { color: var(--muted); font-style: italic; }
+
+  .term-input-row {
+    display: flex; align-items: center;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .term-prompt-sym { color: var(--accent); font-size: 0.85rem; }
+  .term-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    padding: 14px 0;
+    outline: none;
+  }
+  .term-send-btn { flex-shrink: 0; }
+
+  /* ── Screen ── */
+  #panel-screen {
+    flex-direction: column;
+    background: #000;
+  }
+  .screen-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .screen-view {
+    flex: 1; overflow: auto;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 16px;
+    background: #000;
+  }
+  #screenshot-img {
+    max-width: 100%;
+    cursor: crosshair;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: block;
+  }
+  .screen-placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    flex: 1; gap: 12px; color: var(--muted);
+    font-size: 0.78rem; letter-spacing: 1px; font-family: var(--font-ui);
+  }
+  .screen-placeholder svg { opacity: .15; }
+  .mouse-mode-label { font-size: 0.68rem; color: var(--muted); font-family: var(--font-ui); }
+  .toggle-btn {
+    padding: 7px 14px;
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all .15s;
+  }
+  .toggle-btn.on { border-color: var(--green); color: var(--green); background: rgba(52,211,153,0.08); }
+  .toggle-btn:hover { border-color: var(--text); color: var(--text); }
+
+  /* ── Webcam ── */
+  #panel-webcam {
+    flex-direction: column; background: #000;
+  }
+  .webcam-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .webcam-view {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #webcam-img { max-width: 100%; max-height: 100%; border: 1px solid var(--border); border-radius: 4px; }
+
+  /* ── Files ── */
+  #panel-files { flex-direction: column; padding: 24px; gap: 20px; overflow-y: auto; }
+  .files-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 22px;
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(168,85,247,0.5), transparent);
+  }
+  .card-title {
+    font-family: var(--font-ui); font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  }
+  .file-input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .file-input-row input[type=file] { display: none; }
+  .file-label {
+    padding: 8px 14px;
+    border: 1px dashed var(--border);
+    font-size: 0.72rem; color: var(--muted);
+    cursor: pointer; border-radius: 6px;
+    font-family: var(--font-ui); font-weight: 500;
+    transition: border-color .2s, color .2s;
+  }
+  .file-label:hover { border-color: var(--accent); color: var(--accent); }
+  #upload-name { font-size: 0.72rem; color: var(--muted); font-family: var(--font-ui); }
+
+  #download-path { margin-bottom: 10px; }
+
+  /* ── Keyboard ── */
+  .key-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .key {
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background .1s, border-color .1s, color .1s;
+    user-select: none;
+  }
+  .key:hover { background: rgba(168,85,247,0.15); border-color: var(--accent-dim); color: var(--accent-bright); }
+  .key:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .key.wide { padding: 7px 24px; }
+  .key.wider { padding: 7px 52px; }
+
+  /* ── Selects ── */
+  select {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 7px 12px;
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Animations ── */
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+  .scan-line { display: none; }
+
+  .blink { animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="scan-line"></div>
+
+<!-- ── LOGIN ── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">CT<span>RL</span></div>
+    <div class="login-sub">Remote Control Panel</div>
+    <div class="field-label">Server Address</div>
+    <input type="text" id="server-addr" value="http://YOUR_SERVER_IP:8000" style="margin-bottom:14px">
+    <div class="field-label">Password</div>
+    <input type="password" id="login-pass" placeholder="••••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn login-btn" onclick="doLogin()">Connect <span class="blink">_</span></button>
+    <div class="error-msg" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── APP ── -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-logo">CT<span>RL</span></div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('terminal')">Terminal</div>
+      <div class="tab" onclick="switchTab('screen')">Screen</div>
+      <div class="tab" onclick="switchTab('webcam')">Webcam</div>
+      <div class="tab" onclick="switchTab('files')">Files</div>
+      <div class="tab" onclick="switchTab('keyboard')">Keys</div>
+    </div>
+    <div class="topbar-right">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-label" id="status-label">Connecting…</span>
+    </div>
+  </div>
+
+  <!-- TERMINAL -->
+  <div class="panel active" id="panel-terminal">
+    <div class="term-output" id="term-out"></div>
+    <div class="term-input-row">
+      <span class="term-prompt-sym">&gt;_</span>
+      <input class="term-input" id="term-input" placeholder="Enter command…" onkeydown="termKeydown(event)">
+      <button class="btn term-send-btn" onclick="sendCmd()">RUN</button>
+    </div>
+  </div>
+
+  <!-- SCREEN -->
+  <div class="panel" id="panel-screen">
+    <div class="screen-toolbar">
+      <button class="btn" onclick="grabScreen()">📸 Capture</button>
+      <button class="toggle-btn" id="auto-capture-btn" onclick="toggleAutoCapture()">Auto OFF</button>
+      <button class="toggle-btn" id="mouse-control-btn" onclick="toggleMouseControl()">Mouse OFF</button>
+      <span class="mouse-mode-label" id="mouse-mode-label"></span>
+      <select id="mouse-action-select">
+        <option value="click">Left Click</option>
+        <option value="right_click">Right Click</option>
+        <option value="double_click">Double Click</option>
+        <option value="move">Move Only</option>
+      </select>
+    </div>
+    <div class="screen-view" id="screen-view">
+      <div class="screen-placeholder" id="screen-placeholder">
+        <svg width="48" height="48" fill="none" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Press CAPTURE to take a screenshot</span>
+      </div>
+      <img id="screenshot-img" style="display:none" onclick="screenClick(event)" onmousemove="screenMouseMove(event)">
+    </div>
+  </div>
+
+  <!-- WEBCAM -->
+  <div class="panel" id="panel-webcam">
+    <div class="webcam-toolbar">
+      <button class="btn success" onclick="startWebcam()">▶ Start</button>
+      <button class="btn danger" onclick="stopWebcam()">■ Stop</button>
+      <span style="font-size:0.7rem;color:var(--muted)" id="webcam-status">Idle</span>
+    </div>
+    <div class="webcam-view">
+      <img id="webcam-img" src="" style="display:none">
+      <div class="screen-placeholder" id="webcam-placeholder">
+        <svg width="48" height="48" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>Webcam not started</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILES -->
+  <div class="panel" id="panel-files">
+    <div class="files-grid">
+      <div class="card">
+        <div class="card-title">Upload to PC</div>
+        <div class="file-input-row" style="margin-bottom:12px">
+          <label class="file-label" for="upload-file-input">📁 Choose File</label>
+          <input type="file" id="upload-file-input" onchange="fileSelected(event)">
+          <span id="upload-name">No file chosen</span>
+        </div>
+        <div class="field-label">Destination folder on PC</div>
+        <input type="text" id="upload-dest" placeholder="C:\Users\YourName\Desktop" style="margin-bottom:12px">
+        <button class="btn success" onclick="uploadFile()">⬆ Upload</button>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:10px" id="upload-status"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Download from PC</div>
+        <div class="field-label">Full path on PC</div>
+        <input type="text" id="download-path" placeholder="C:\Users\YourName\Desktop\file.txt">
+        <button class="btn" onclick="downloadFile()">⬇ Download</button>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:10px" id="download-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KEYBOARD -->
+  <div class="panel" id="panel-keyboard" style="display:none;flex-direction:column;padding:24px;gap:20px;overflow-y:auto">
+    <div class="card">
+      <div class="card-title">Type Text</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="type-text" placeholder="Text to type on remote PC…" style="flex:1" onkeydown="if(event.key==='Enter')sendType()">
+        <button class="btn" onclick="sendType()">TYPE</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Hotkeys</div>
+      <div class="key-grid">
+        <div class="key" onclick="sendHotkey(['ctrl','c'])">Ctrl+C</div>
+        <div class="key" onclick="sendHotkey(['ctrl','v'])">Ctrl+V</div>
+        <div class="key" onclick="sendHotkey(['ctrl','z'])">Ctrl+Z</div>
+        <div class="key" onclick="sendHotkey(['ctrl','a'])">Ctrl+A</div>
+        <div class="key" onclick="sendHotkey(['alt','f4'])">Alt+F4</div>
+        <div class="key" onclick="sendHotkey(['ctrl','shift','esc'])">Task Mgr</div>
+        <div class="key" onclick="sendHotkey(['win','d'])">Show Desktop</div>
+        <div class="key" onclick="sendHotkey(['win','l'])">Lock PC</div>
+        <div class="key" onclick="sendHotkey(['win','r'])">Run…</div>
+        <div class="key" onclick="sendHotkey(['alt','tab'])">Alt+Tab</div>
+        <div class="key" onclick="sendHotkey(['ctrl','alt','delete'])">Ctrl+Alt+Del</div>
+        <div class="key" onclick="sendHotkey(['win'])">Win Key</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Keys</div>
+      <div class="key-grid">
+        <div class="key wider" onclick="sendKey('space')">Space</div>
+        <div class="key wide" onclick="sendKey('enter')">Enter</div>
+        <div class="key wide" onclick="sendKey('backspace')">⌫</div>
+        <div class="key wide" onclick="sendKey('delete')">Del</div>
+        <div class="key wide" onclick="sendKey('tab')">Tab</div>
+        <div class="key" onclick="sendKey('up')">↑</div>
+        <div class="key" onclick="sendKey('down')">↓</div>
+        <div class="key" onclick="sendKey('left')">←</div>
+        <div class="key" onclick="sendKey('right')">→</div>
+        <div class="key" onclick="sendKey('escape')">Esc</div>
+        <div class="key" onclick="sendKey('f5')">F5</div>
+        <div class="key" onclick="sendKey('f11')">F11</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let socket = null;
+let autoCaptureTimer = null;
+let mouseControlEnabled = false;
+let screenshotNaturalW = 1920, screenshotNaturalH = 1080;
+let uploadedFile = null;
+
+// ── Login ─────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const addr = document.getElementById('server-addr').value.trim().replace(/\/$/, '');
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err');
+  errEl.textContent = 'Connecting…';
+
+  try {
+    const r = await fetch(`${addr}/api/auth`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ password: pass })
+    });
+    const d = await r.json();
+    if (!d.ok) { errEl.textContent = '✗ ' + (d.error || 'Auth failed'); return; }
+  } catch(e) { errEl.textContent = '✗ Cannot reach server: ' + e.message; return; }
+
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  initSocket(addr, pass);
+}
+
+function initSocket(addr, pass) {
+  socket = io(addr, { transports: ['websocket','polling'] });
+
+  socket.on('connect', () => {
+    setStatus('online', 'Connected');
+    socket.emit('browser_join', { password: pass, agent_id: 'my-pc' });
+  });
+
+  socket.on('disconnect', () => setStatus('offline', 'Disconnected'));
+  socket.on('connect_error', () => setStatus('offline', 'Connection error'));
+
+  socket.on('joined', d => {
+    termLog('sys', `✓ Joined relay. Agents online: [${(d.agents||[]).join(', ')||'none'}]`);
+  });
+
+  socket.on('agent_online',  d => termLog('sys', `● Agent online: ${d.agent_id}`));
+  socket.on('agent_offline', d => termLog('sys', `○ Agent offline: ${d.agent_id}`));
+
+  socket.on('cmd_response', d => {
+    if (d.cmd) termLog('prompt', `> ${d.cmd}`);
+    if (d.output) termLog('out', d.output.trimEnd());
+    if (d.error)  termLog('err', d.error.trimEnd());
+    if (!d.output && !d.error) termLog('sys', `(exit ${d.code})`);
+  });
+
+  socket.on('screenshot_data', d => {
+    if (!d.img) { termLog('err', 'Screenshot failed'); return; }
+    const img = document.getElementById('screenshot-img');
+    img.src = 'data:image/jpeg;base64,' + d.img;
+    img.style.display = 'block';
+    document.getElementById('screen-placeholder').style.display = 'none';
+    img.onload = () => {
+      screenshotNaturalW = img.naturalWidth;
+      screenshotNaturalH = img.naturalHeight;
+    };
+  });
+
+  socket.on('webcam_frame', d => {
+    if (!d.frame) return;
+    const img = document.getElementById('webcam-img');
+    img.src = 'data:image/jpeg;base64,' + d.frame;
+    img.style.display = 'block';
+    document.getElementById('webcam-placeholder').style.display = 'none';
+    document.getElementById('webcam-status').textContent = '● Live';
+  });
+
+  socket.on('file_chunk', d => {
+    if (!d.data) return;
+    const bytes = Uint8Array.from(atob(d.data), c => c.charCodeAt(0));
+    const blob = new Blob([bytes]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = d.filename || 'download';
+    a.click();
+    document.getElementById('download-status').textContent = '✓ Downloaded: ' + d.filename;
+  });
+
+  socket.on('error', d => termLog('err', '⚠ ' + (d.msg || JSON.stringify(d))));
+}
+
+function setStatus(state, label) {
+  const dot = document.getElementById('status-dot');
+  const lbl = document.getElementById('status-label');
+  dot.className = 'status-dot ' + state;
+  lbl.textContent = label;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['terminal','screen','webcam','files','keyboard'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = '';
+  });
+  const panel = document.getElementById('panel-' + name);
+  if (panel) {
+    if (name === 'keyboard') { panel.style.display = 'flex'; }
+    else { panel.classList.add('active'); }
+  }
+}
+
+// ── Terminal ──────────────────────────────────────────────────────────────
+const cmdHistory = []; let histIdx = -1;
+
+function termLog(type, text) {
+  const out = document.getElementById('term-out');
+  const el = document.createElement('div');
+  el.className = 'term-line ' + type;
+  el.textContent = text;
+  out.appendChild(el);
+  out.scrollTop = out.scrollHeight;
+}
+
+function termKeydown(e) {
+  if (e.key === 'Enter') { sendCmd(); return; }
+  if (e.key === 'ArrowUp') {
+    if (histIdx < cmdHistory.length - 1) histIdx++;
+    document.getElementById('term-input').value = cmdHistory[cmdHistory.length - 1 - histIdx] || '';
+    e.preventDefault();
+  }
+  if (e.key === 'ArrowDown') {
+    if (histIdx > 0) histIdx--;
+    else { histIdx = -1; document.getElementById('term-input').value = ''; return; }
+    document.getElementById('term-input').value = cmdHistory[cmdHistory.length - 1 - histIdx] || '';
+    e.preventDefault();
+  }
+}
+
+function sendCmd() {
+  const inp = document.getElementById('term-input');
+  const cmd = inp.value.trim();
+  if (!cmd || !socket) return;
+  cmdHistory.push(cmd); histIdx = -1;
+  inp.value = '';
+  socket.emit('run_cmd', { cmd });
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────
+function grabScreen() {
+  if (!socket) return;
+  socket.emit('request_screenshot', {});
+}
+
+function toggleAutoCapture() {
+  const btn = document.getElementById('auto-capture-btn');
+  if (autoCaptureTimer) {
+    clearInterval(autoCaptureTimer);
+    autoCaptureTimer = null;
+    btn.textContent = 'Auto OFF'; btn.classList.remove('on');
+  } else {
+    grabScreen();
+    autoCaptureTimer = setInterval(grabScreen, 2000);
+    btn.textContent = 'Auto ON'; btn.classList.add('on');
+  }
+}
+
+function toggleMouseControl() {
+  mouseControlEnabled = !mouseControlEnabled;
+  const btn = document.getElementById('mouse-control-btn');
+  btn.textContent = mouseControlEnabled ? 'Mouse ON' : 'Mouse OFF';
+  btn.classList.toggle('on', mouseControlEnabled);
+  document.getElementById('mouse-mode-label').textContent = mouseControlEnabled ? 'Click on screenshot to control' : '';
+}
+
+function getScreenCoords(event) {
+  const img = document.getElementById('screenshot-img');
+  const rect = img.getBoundingClientRect();
+  const scaleX = screenshotNaturalW / rect.width;
+  const scaleY = screenshotNaturalH / rect.height;
+  return {
+    x: Math.round((event.clientX - rect.left) * scaleX),
+    y: Math.round((event.clientY - rect.top)  * scaleY)
+  };
+}
+
+function screenClick(event) {
+  if (!mouseControlEnabled || !socket) return;
+  const {x,y} = getScreenCoords(event);
+  const action = document.getElementById('mouse-action-select').value;
+  socket.emit('mouse_action', { action, x, y });
+}
+
+let moveThrottle = 0;
+function screenMouseMove(event) {
+  if (!mouseControlEnabled || !socket) return;
+  const now = Date.now();
+  if (now - moveThrottle < 80) return;
+  moveThrottle = now;
+  if (document.getElementById('mouse-action-select').value !== 'move') return;
+  const {x,y} = getScreenCoords(event);
+  socket.emit('mouse_action', { action: 'move', x, y });
+}
+
+// ── Webcam ────────────────────────────────────────────────────────────────
+function startWebcam() {
+  if (!socket) return;
+  socket.emit('request_webcam', {});
+  document.getElementById('webcam-status').textContent = '⏳ Starting…';
+}
+
+function stopWebcam() {
+  if (!socket) return;
+  socket.emit('stop_webcam', {});
+  document.getElementById('webcam-status').textContent = 'Stopped';
+  document.getElementById('webcam-img').style.display = 'none';
+  document.getElementById('webcam-placeholder').style.display = 'flex';
+}
+
+// ── Files ─────────────────────────────────────────────────────────────────
+function fileSelected(e) {
+  uploadedFile = e.target.files[0];
+  document.getElementById('upload-name').textContent = uploadedFile ? uploadedFile.name : 'No file chosen';
+}
+
+function uploadFile() {
+  if (!socket || !uploadedFile) { document.getElementById('upload-status').textContent = '⚠ No file selected'; return; }
+  const dest = document.getElementById('upload-dest').value.trim();
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const b64 = ev.target.result.split(',')[1];
+    socket.emit('upload_file', { filename: uploadedFile.name, dest: dest || null, data: b64 });
+    document.getElementById('upload-status').textContent = '✓ Sent: ' + uploadedFile.name;
+  };
+  reader.readAsDataURL(uploadedFile);
+}
+
+function downloadFile() {
+  if (!socket) return;
+  const path = document.getElementById('download-path').value.trim();
+  if (!path) return;
+  socket.emit('request_file', { path });
+  document.getElementById('download-status').textContent = '⏳ Requesting…';
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────
+function sendType() {
+  const text = document.getElementById('type-text').value;
+  if (!socket || !text) return;
+  socket.emit('key_action', { action: 'type', text });
+  document.getElementById('type-text').value = '';
+}
+
+function sendHotkey(keys) {
+  if (!socket) return;
+  socket.emit('key_action', { action: 'hotkey', keys });
+}
+
+function sendKey(key) {
+  if (!socket) return;
+  socket.emit('key_action', { action: 'press', key });
+}
+
+// auto-focus terminal input
+document.getElementById('term-input').focus();
+</script>
+</body>
+</html>
